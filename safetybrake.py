@@ -28,7 +28,7 @@ NMPWAIT_USE_DEFAULT_WAIT = 0
 INVALID_HANDLE_VALUE = -1
 ERROR_PIPE_CONNECTED = 535
 
-MESSAGE = "Yes it is\0"
+MESSAGE = "default msg python\0"
 szPipename = "\\\\.\\pipe\\mynamedpipe"
 #--------------------------
 
@@ -46,14 +46,16 @@ def getdistance():
 
 #---named pipe reading thread
 def ReadWrite_ClientPipe_Thread(hPipe):
-    chBuf = create_unicode_buffer(BUFSIZE)
+    chBuf = create_string_buffer(BUFSIZE)
+  #  chBuf = create_unicode_buffer(BUFSIZE)
     cbRead = c_ulong(0)
     while 1:
         fSuccess = windll.kernel32.ReadFile(hPipe, chBuf, BUFSIZE,
         byref(cbRead), None)
         if ((fSuccess ==1) or (cbRead.value != 0)):
-            print chBuf.value
+            print "message from client: "+chBuf.value
             cbWritten = c_ulong(0)
+            MESSAGE = chBuf.value+"\0"
             fSuccess = windll.kernel32.WriteFile(hPipe, c_char_p(MESSAGE), len(MESSAGE), byref(cbWritten), None)
         else:
             break
