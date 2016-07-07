@@ -3,41 +3,81 @@ To prevent the drone from hitting objects, this program takes an input for dista
 """
 
 from dronekit import connect, VehicleMode, LocationGlobalRelative
+
 import time, serial
 
-"""
-#Set up option parsing to get connection string
-import argparse  
-parser = argparse.ArgumentParser(description='Example showing how to set and clear vehicle channel-override information.')
-parser.add_argument('--connect', 
-                   help="vehicle connection target string. If not specified, SITL automatically started and used.")
-args = parser.parse_args()
-
-connection_string = args.connect
-sitl = None
+from ctypes import *
 
 
-#Start SITL if no connection string specified
-if not connection_string:
-    import dronekit_sitl
-    sitl = dronekit_sitl.start_default()
-    connection_string = sitl.connection_string()
-"""
+
+#----named pipe variables
+PIPE_ACCESS_DUPLEX = 0x3
+PIPE_TYPE_MESSAGE = 0x4
+PIPE_READMODE_MESSAGE = 0x2
+PIPE_WAIT = 0
+PIPE_UNLIMITED_INSTANCES = 255
+BUFSIZE = 4096
+NMPWAIT_USE_DEFAULT_WAIT = 0
+INVALID_HANDLE_VALUE = -1
+ERROR_PIPE_CONNECTED = 535
+
+MESSAGE = "default python message\0"
+szPipename = "\\\\.\\pipe\\mynamedpipe"
     
-#------------Function declarations---------------------------    
+#------------Funtion declarations---------------------------
 def getdistance():
-    d = 2900
-    return d
-    
+	d = 2900
+	return d
+
+
+#---named pipe reading thread
+def ReadWrite_ClientPipe_Thread(hPipe):
+	chBuf = create_string_buffer(BUFSIZE)
+	cbRead = c_ulong(0)
+	while ON > MP:  # Braking Function Enabled #switch to channels not overrides for actual usage!
+		fSuccess = windll.kernel32.ReadFile(hPipe, chBuf, BUFSIZE,
+		byref(cbRead), None)
+		if ((fSuccess ==1) or (cbRead.value != 0)):
+			print "DATA:"+chBuf.value
+			MESSAGE = chBuf.value+"\0"
+			cbWritten = c_ulong(0)
+			fSuccess = windll.kernel32.WriteFile(hPipe, c_char_p(MESSAGE), len(MESSAGE), byref(cbWritten), None)
+		else:
+			break
+		if ( (not fSuccess) or (len(MESSAGE) != cbWritten.value)):
+			print "Could not reply to the client's request from the pipe"
+			break
+		else:
+			# print "Number of bytes written:", cbWritten.value
+			distance = getdistance()
+			keepdistance = kdm * MP  # switch to channels not overrides for actual usage!
+			if distance < keepdistance + BT:  # if distance is below threshold and braking is enabled, then execute braking function
+				print "Engage Braking"
+
+				thrust = distance - keepdistance
+				pitch = MP + thrust
+				if pitch > pitchuppercap:
+					pitch = pitchuppercap
+				if pitch < pitchlowercap:
+					pitch = pitchlowercap
+				vehicle.channels.overrides['2'] = pitch  # Override Pitch channel
+
+				print "READOUT"
+				print "distance: %s" % distance
+				print "keepdistance: %s" % keepdistance
+				print "thrust: %s" % thrust
+				print " Ch2 override: %s" % vehicle.channels.overrides['2']
+				time.sleep(0.1)
+
+
+	windll.kernel32.FlushFileBuffers(hPipe)
+	windll.kernel32.DisconnectNamedPipe(hPipe)
+	windll.kernel32.CloseHandle(hPipe)
+
+
 
 #---------------Connect to the Vehicle------------------------
-"""
-print 'Connecting to vehicle on: %s' % connection_string
-vehicle = connect(connection_string, wait_ready=True)
-"""
-
-
-connection_string = 'com4'
+connection_string = 'com14'
 print 'Connecting to vehicle on: %s' % connection_string
 vehicle = connect(connection_string, baud = 57600)
 
@@ -91,19 +131,9 @@ print " Airspeed: %s" % vehicle.airspeed    # settable
 print " Mode: %s" % vehicle.mode.name    # settable
 print " Armed: %s" % vehicle.armed    # settable
 
-
-
-
-
-
-
-
-
-
-
 #--------------------------------------------------------------
 # Get all original channel values (before override)
-print "Channel values from RC Tx:", vehicle.channels
+#print "Channel values from RC Tx:", vehicle.channels
 
 # Access channels individually
 print "Read channels individually:"
@@ -165,46 +195,59 @@ print " CH7 override: %s" % vehicle.channels.overrides['7']
 print("Ending Test Suite")
 #wait = input("PRESS ENTER TO CONTINUE.")
 #----------------------Braking----------------------------------------
-while True:
-    print "Clear all overrides"
-    vehicle.channels.overrides = {}
-    print " Channel overrides: %s" % vehicle.channels.overrides
-    
-    while ON > MP: #Braking Function Enabled #switch to channels not overrides for actual usage!
-        distance = getdistance()
-        keepdistance = kdm * MP #switch to channels not overrides for actual usage!
-        if distance < keepdistance+BT: # if distance is below threshold and braking is enabled, then execute braking function
-            print "Engage Braking"
-            
-            thrust = distance - keepdistance 
-            pitch = MP + thrust
-            if pitch > pitchuppercap:
-                pitch = pitchuppercap
-            if pitch < pitchlowercap:
-                pitch = pitchlowercap
-            vehicle.channels.overrides['2'] = pitch # Override Pitch channel
-            
-            print "READOUT"
-            print "distance: %s" % distance
-            print "keepdistance: %s" % keepdistance 
-            print "thrust: %s" % thrust
-            print " Ch2 override: %s" % vehicle.channels.overrides['2']
-            time.sleep(1)
+def main():
+	THREADFUNC = CFUNCTYPE(c_int, c_int)
+	thread_func = THREADFUNC(ReadWrite_ClientPipe_Thread)
+
+	while True:
+		print "Clear all overrides"
+		vehicle.channels.overrides = {}
+		print " Channel overrides: %s" % vehicle.channels.overrides
+
+		hPipe = windll.kernel32.CreateNamedPipeA(szPipename, PIPE_ACCESS_DUPLEX,
+												 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+												 PIPE_UNLIMITED_INSTANCES, BUFSIZE, BUFSIZE,
+												 NMPWAIT_USE_DEFAULT_WAIT, None)
+		if (hPipe == INVALID_HANDLE_VALUE):
+			print "Error in creating Named Pipe"
+			return 0
+
+		fConnected = windll.kernel32.ConnectNamedPipe(hPipe, None)
+		if ((fConnected == 0) and (windll.kernel32.GetLastError() == ERROR_PIPE_CONNECTED)):
+			fConnected = 1
+		if (fConnected == 1):
+			dwThreadId = c_ulong(0)
+			hThread = windll.kernel32.CreateThread(None, 0, thread_func, hPipe, 0, byref(dwThreadId))
+			if (hThread == -1):
+				print "Create Thread failed"
+				return 0
+			else:
+				windll.kernel32.CloseHandle(hThread)
+		else:
+			print "Could not connect to the Named Pipe"
+			windll.kernel32.CloseHandle(hPipe)
 
 
 
-print "Clear all overrides"
-vehicle.channels.overrides = {}
-print " Channel overrides: %s" % vehicle.channels.overrides 
 
-#Close vehicle object before exiting script
-print "\nClose vehicle object"
-vehicle.close()
 
-# Shut down simulator if it was started.
-if sitl is not None:
-    sitl.stop()
+	print "Clear all overrides"
+	vehicle.channels.overrides = {}
+	print " Channel overrides: %s" % vehicle.channels.overrides
 
-print("Completed")
+	#Close vehicle object before exiting script
+	print "\nClose vehicle object"
+	vehicle.close()
 
-wait = input("PRESS ENTER TO CONTINUE.")
+	print("Completed")
+
+	wait = input("PRESS ENTER TO CONTINUE.")
+
+
+
+if __name__ == "__main__":
+	main()
+
+
+
+
