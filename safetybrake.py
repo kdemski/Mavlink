@@ -25,9 +25,6 @@ MESSAGE = "default python message\0"
 szPipename = "\\\\.\\pipe\\mynamedpipe"
     
 #------------Funtion declarations---------------------------
-def getdistance():
-	d = 2900
-	return d
 
 
 #---named pipe reading thread
@@ -38,7 +35,7 @@ def ReadWrite_ClientPipe_Thread(hPipe):
 		fSuccess = windll.kernel32.ReadFile(hPipe, chBuf, BUFSIZE,
 		byref(cbRead), None)
 		if ((fSuccess ==1) or (cbRead.value != 0)):
-			print "DATA:"+chBuf.value
+			#print "DATA:"+chBuf.value
 			MESSAGE = chBuf.value+"\0"
 			cbWritten = c_ulong(0)
 			fSuccess = windll.kernel32.WriteFile(hPipe, c_char_p(MESSAGE), len(MESSAGE), byref(cbWritten), None)
@@ -49,8 +46,8 @@ def ReadWrite_ClientPipe_Thread(hPipe):
 			break
 		else:
 			# print "Number of bytes written:", cbWritten.value
-			distance = getdistance()
-			keepdistance = kdm * MP  # switch to channels not overrides for actual usage!
+			distance = float(chBuf.value)
+			keepdistance = kdm * 500  # switch to channels not overrides for actual usage!
 			if distance < keepdistance + BT:  # if distance is below threshold and braking is enabled, then execute braking function
 				print "Engage Braking"
 
@@ -67,7 +64,7 @@ def ReadWrite_ClientPipe_Thread(hPipe):
 				print "keepdistance: %s" % keepdistance
 				print "thrust: %s" % thrust
 				print " Ch2 override: %s" % vehicle.channels.overrides['2']
-				time.sleep(0.1)
+			#	time.sleep(1)
 
 
 	windll.kernel32.FlushFileBuffers(hPipe)
@@ -77,7 +74,7 @@ def ReadWrite_ClientPipe_Thread(hPipe):
 
 
 #---------------Connect to the Vehicle------------------------
-connection_string = 'com14'
+connection_string = 'com16'
 print 'Connecting to vehicle on: %s' % connection_string
 vehicle = connect(connection_string, baud = 57600)
 
@@ -166,9 +163,9 @@ MP = 1500  #rc midpoint this might be inutile once pid is locked in
 kdchannel = 7 #keep distance channel (knob)
 bechannel = 8 #braking enable channel (switch)
 kdm = 2
-pitchuppercap = 1600
-pitchlowercap = 1400
-BT = 2000 # distance above keepdistanec at which point braking is activated
+pitchuppercap = 2000
+pitchlowercap = 1000
+BT = 500 # distance above keepdistanec at which point braking is activated
 
 #distances in mm
 distance = 0  #piped from c++ app
